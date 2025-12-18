@@ -1,0 +1,17 @@
+# Python 가상 환경 폴더 제외
+venv/
+.venv/
+
+# 컴파일된 Python 파일 제외
+__pycache__/
+*.pyc
+
+# 운영체제/VS Code 관련 파일 제외
+.DS_Store # Mac OS
+.vscode/ # VS Code 설정 (개인 설정)
+
+# Pygbag 빌드 폴더 제외 (중요!)
+/build/
+
+# 랭킹 데이터 파일 제외 (선택 사항 - 최종 점수 파일은 보통 제외)
+rankings.json
