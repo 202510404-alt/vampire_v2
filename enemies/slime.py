@@ -21,6 +21,10 @@ class Slime:
         # main.py에서 전달받은 현재 총 HP에 해당 슬라임 종류의 배율을 곱하여 max_hp 설정
         self.max_hp = math.ceil(current_total_max_hp * hp_multiplier) # 소수점 올림 처리
         self.hp = self.max_hp
+
+       # 🟢 피격 이펙트 타이머 추가 (0이면 평상시, 0보다 크면 빨간 상태)
+        self.hit_flash_timer = 0
+        self.flash_duration = 5 # 빨간색이 유지될 프레임 (약 0.1초)
         
         self.rect = pygame.Rect(0,0,radius*2,radius*2)
         self.rect.center = (self.world_x,self.world_y)
@@ -70,6 +74,10 @@ class Slime:
     def update(self, target_player_world_x, target_player_world_y, game_entities_lists=None):
         if self.hp <= 0: return False
 
+         # 🟢 이펙트 타이머 감소
+        if self.hit_flash_timer > 0:
+            self.hit_flash_timer -= 1
+
         self.lifespan -= 1
         if self.lifespan <= 0: self.hp = 0; return False
 
@@ -95,36 +103,48 @@ class Slime:
 
     def take_damage(self, amount):
         self.hp -= amount
+        # 🟢 데미지 입을 때 타이머 작동
+        self.hit_flash_timer = self.flash_duration 
         if self.hp <= 0: self.hp = 0; return True
         return False
-
+    
     def draw(self, surface, camera_offset_x, camera_offset_y):
-        for dx_off in [-config.MAP_WIDTH, 0, config.MAP_WIDTH]:
-            for dy_off in [-config.MAP_HEIGHT, 0, config.MAP_HEIGHT]:
-                obj_wx_render, obj_wy_render = self.world_x+dx_off, self.world_y+dy_off
-                scr_x, scr_y = obj_wx_render-camera_offset_x, obj_wy_render-camera_offset_y
+            for dx_off in [-config.MAP_WIDTH, 0, config.MAP_WIDTH]:
+                for dy_off in [-config.MAP_HEIGHT, 0, config.MAP_HEIGHT]:
+                    obj_wx_render, obj_wy_render = self.world_x+dx_off, self.world_y+dy_off
+                    scr_x, scr_y = obj_wx_render-camera_offset_x, obj_wy_render-camera_offset_y
 
-                if -self.radius < scr_x < config.SCREEN_WIDTH+self.radius and \
-                   -self.radius < scr_y < config.SCREEN_HEIGHT+self.radius: # 화면에 보일 때만 그리기
+                    if -self.radius < scr_x < config.SCREEN_WIDTH+self.radius and \
+                    -self.radius < scr_y < config.SCREEN_HEIGHT+self.radius:
 
-                    # 1. 애니메이션 이미지가 성공적으로 로드되었을 때
-                    if self.animation_images:
-                        frame_index = self.animation_sequence[self.current_frame_index]
-                        image = self.animation_images[frame_index]
-                        surface.blit(image, image.get_rect(center=(int(scr_x), int(scr_y))))
-                    # 2. 이미지 로드에 실패했을 때
-                    else: 
-                        pygame.draw.circle(surface, self.color, (int(scr_x), int(scr_y)), self.radius)
+                        if self.animation_images:
+                            frame_index = self.animation_sequence[self.current_frame_index]
+                            original_image = self.animation_images[frame_index]
+                            
+                            # 🟢 렌더링용 이미지 결정
+                            render_image = original_image
+                            if self.hit_flash_timer > 0:
+                                # 이미지를 복사해서 빨간색 틴트를 입힘
+                                render_image = original_image.copy()
+                                # 빨간색 표면 생성
+                                flash_surf = pygame.Surface(render_image.get_size(), pygame.SRCALPHA)
+                                flash_surf.fill((255, 50, 50, 255)) # 밝은 빨강
+                                # 이미지의 투명도 정보를 유지하며 빨간색 덧씌우기
+                                render_image.blit(flash_surf, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                            
+                            surface.blit(render_image, render_image.get_rect(center=(int(scr_x), int(scr_y))))
+                        else: 
+                            # 이미지 실패 시 원 그리기 (피격 시 흰색/빨간색 테두리 효과)
+                            draw_color = (255, 0, 0) if self.hit_flash_timer > 0 else self.color
+                            pygame.draw.circle(surface, draw_color, (int(scr_x), int(scr_y)), self.radius)
 
-                    # HP 바 그리기
-                    if self.hp < self.max_hp and self.hp > 0:
-                        bar_width = self.radius * 2
-                        bar_height = config.SLIME_HP_BAR_HEIGHT
-                        bar_screen_x = scr_x - bar_width//2
-                        bar_screen_y = scr_y - self.radius - bar_height - 5
-                        pygame.draw.rect(surface, config.DARK_RED, (bar_screen_x, bar_screen_y, bar_width, bar_height))
-                        current_hp_bar_width = int(bar_width*(self.hp/self.max_hp)) if self.max_hp>0 else 0
-                        if current_hp_bar_width > 0: pygame.draw.rect(surface, config.HP_BAR_GREEN, (bar_screen_x, bar_screen_y, current_hp_bar_width, bar_height))
-                    # return 문을 루프 밖으로 이동시켜 맵 경계 래핑이 올바르게 그려지도록 함
-                    # 한 번이라도 그려졌으면 더 이상 래핑 계산을 할 필요가 없으므로 return
-                    return 
+                        # HP 바 그리기 (동일)
+                        if self.hp < self.max_hp and self.hp > 0:
+                            bar_width = self.radius * 2
+                            bar_height = config.SLIME_HP_BAR_HEIGHT
+                            bar_screen_x = scr_x - bar_width//2
+                            bar_screen_y = scr_y - self.radius - bar_height - 5
+                            pygame.draw.rect(surface, config.DARK_RED, (bar_screen_x, bar_screen_y, bar_width, bar_height))
+                            current_hp_bar_width = int(bar_width*(self.hp/self.max_hp)) if self.max_hp>0 else 0
+                            if current_hp_bar_width > 0: pygame.draw.rect(surface, config.HP_BAR_GREEN, (bar_screen_x, bar_screen_y, current_hp_bar_width, bar_height))
+                        return

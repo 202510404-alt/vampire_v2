@@ -37,6 +37,9 @@ class Player(pygame.sprite.Sprite):
         self.exp_to_level_up = config.PLAYER_INITIAL_EXP_TO_LEVEL_UP
         self.active_weapons = []
 
+                # 🟢 화면 흔들림 강도 변수 추가
+        self.shake_intensity = 0.0
+
         # 사용 가능한 새로운 무기 클래스 목록
         self.available_new_weapons = [DaggerLauncher, FlailWeapon, WhipWeapon, BatController]
         
@@ -83,6 +86,12 @@ class Player(pygame.sprite.Sprite):
 
         if self.invincible_timer > 0: self.invincible_timer -= 1
 
+        # 🟢 흔들림 감쇄 (더 확실하게 보이도록 선형 감소 사용)
+        if self.shake_intensity > 0:
+            self.shake_intensity -= 1.5  # 매 프레임 1.5씩 일정하게 감소
+            if self.shake_intensity < 0:
+                self.shake_intensity = 0
+
         keys = pygame.key.get_pressed()
         dx, dy = 0,0
         if keys[pygame.K_LEFT]: dx = -config.PLAYER_SPEED
@@ -98,6 +107,7 @@ class Player(pygame.sprite.Sprite):
             self.special_skill.update()
 
     def take_damage(self, amount):
+        self.shake_intensity = amount / 3.0 
         if self.invincible_timer > 0: return
         self.hp = max(0, self.hp - amount)
         self.invincible_timer = config.PLAYER_INVINCIBILITY_DURATION

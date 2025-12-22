@@ -1,9 +1,6 @@
 import pygame
 import config
 from ui.fonts import font, small_font, medium_font, large_font
-# 무기 정보 표시를 위한 import (필요한 것들만)
-from weapons.bat_controller import BatController
-from entities.bat_minion import BatMinion
 
 def draw_game_ui(surface, player_obj, game_entities, current_slime_max_hp_val, boss_defeat_count_val, slime_kill_count_val, boss_spawn_threshold_val):
     """게임 플레이 중의 UI를 그립니다. (숫자 표시 복구 완료)"""
@@ -40,18 +37,6 @@ def draw_game_ui(surface, player_obj, game_entities, current_slime_max_hp_val, b
     # 🚩 EXP 숫자 표시 복구
     exp_text = small_font.render(f"EXP: {player_obj.exp}/{player_obj.exp_to_level_up}", True, config.WHITE)
     surface.blit(exp_text, exp_text.get_rect(center=(exp_x + exp_w//2, exp_y + exp_h//2)))
-
-    # 5. 무기 및 스킬 리스트 (기존 상세 로직)
-    y_offset = exp_y + exp_h + 15
-    for wpn in player_obj.active_weapons:
-        extra = ""
-        if isinstance(wpn, BatController):
-            my_bats = sum(1 for b in game_entities.get('bats', []) if b.controller == wpn)
-            extra = f" ({my_bats}/{wpn.max_bats})"
-        
-        wpn_s = small_font.render(f"{wpn.name} L{wpn.level} (Dmg:{wpn.damage}){extra}", True, config.WHITE)
-        surface.blit(wpn_s, (10, y_offset))
-        y_offset += 20
 
     # 6. 난이도 및 보스 처치 수 (좌측 하단)
     info_y = config.SCREEN_HEIGHT - 90

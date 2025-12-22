@@ -6,6 +6,7 @@ from camera import Camera
 GAME_STATE_MENU = "MENU"
 GAME_STATE_PLAYING = "PLAYING"
 GAME_STATE_RANKING = "RANKING"
+GAME_STATE_INVENTORY = "INVENTORY"
 
 # 전역 엔티티 리스트
 player = None
