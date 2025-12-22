@@ -5,7 +5,6 @@ import config
 # 🚩 온라인 통신을 위한 라이브러리 import (Pygbag 호환)
 import urllib.request
 import urllib.parse
-import ssl
 import pygame 
 
 # 랭킹 항목 정의 (정렬 및 필터링에 사용)
