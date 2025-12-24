@@ -1,10 +1,11 @@
-# weapons/whip_weapon.py
+# weapons/whip_weapon.py (그리드 최적화 버전)
 import random
 import math
 import pygame
 import config
 import utils
 from weapons.base_weapon import Weapon
+from core.grid import enemy_grid # 🟢 그리드 엔진 임포트 추가
 
 class WhipWeapon(Weapon):
     def __init__(self, player_ref):
@@ -21,22 +22,33 @@ class WhipWeapon(Weapon):
         self.attack_animation_duration = config.FPS*0.2
         self.current_attack_start_angle_on_screen = 0
         self.hit_slimes_this_attack = set()
+        # 🟢 탐색 범위: 공격 범위(130)를 커버하기 위해 1칸 청크(250)면 충분
+        self.target_search_radius_cells = 1 
 
     def update(self, slimes_list, game_entities_lists):
         if self.is_attacking:
             self.attack_animation_timer-=1
             if self.attack_animation_timer<=0: self.is_attacking=False
+        
         self.attack_timer+=1
         if self.attack_timer>=self.cooldown and not self.is_attacking:
-            all_slimes = slimes_list + game_entities_lists.get('boss_slimes', [])
-            living_slimes=[s for s in all_slimes if s.hp>0]
+            
+            # 🟢 1단계 렉 제거: 전체 적이 아닌 주변 적만 가져오기
             player_wx,player_wy=self.player.world_x,self.player.world_y
+            # 주변 1칸 청크의 적들만 가져와서 검사 (search_radius_cells=1)
+            nearby_enemies = enemy_grid.get_nearby_enemies(player_wx, player_wy, self.target_search_radius_cells)
+            living_slimes=[s for s in nearby_enemies if s.hp>0] # 주변 적들 중에서만 살아있는 적 필터링
+            
             closest_slime,min_dist_sq=None,float('inf')
+            
+            # 🟢 타겟 검색 (주변 적들만 대상으로 루프)
             if living_slimes:
                 for slime_candidate in living_slimes:
                     dist_sq=utils.distance_sq_wrapped(player_wx,player_wy,slime_candidate.world_x,slime_candidate.world_y,config.MAP_WIDTH,config.MAP_HEIGHT)
                     if dist_sq<min_dist_sq: min_dist_sq=dist_sq; closest_slime=slime_candidate
+            
             target_angle_rad=0
+            # ... (이하 타겟 각도 계산 로직 동일) ...
             if closest_slime and min_dist_sq<(self.attack_reach*2)**2:
                 dx_to_slime=utils.get_wrapped_delta(player_wx,closest_slime.world_x,config.MAP_WIDTH)
                 dy_to_slime=utils.get_wrapped_delta(player_wy,closest_slime.world_y,config.MAP_HEIGHT)
@@ -46,12 +58,16 @@ class WhipWeapon(Weapon):
                 player_moved_dy=utils.get_wrapped_delta(self.player.prev_world_y,self.player.world_y,config.MAP_HEIGHT)
                 if not (player_moved_dx==0 and player_moved_dy==0): target_angle_rad=math.atan2(player_moved_dy,player_moved_dx)
                 else: target_angle_rad=self.current_attack_start_angle_on_screen+self.attack_angle_range/2
+            
             self.attack_timer=0; self.is_attacking=True; self.attack_animation_timer=self.attack_animation_duration
             self.current_attack_start_angle_on_screen=target_angle_rad-(self.attack_angle_range/2)
             self.hit_slimes_this_attack.clear()
 
-            for slime in living_slimes:
+            # 🟢 2단계 렉 제거: 충돌 처리도 주변 적들만 대상으로 루프
+            for slime in living_slimes: # 🚩 전체 적이 아닌 living_slimes (주변 적)만 대상으로 변경
                 if slime in self.hit_slimes_this_attack: continue
+                
+                # ... (이하 충돌 및 각도 계산 로직 동일) ...
                 dist_sq_to_slime=utils.distance_sq_wrapped(player_wx,player_wy,slime.world_x,slime.world_y,config.MAP_WIDTH,config.MAP_HEIGHT)
                 if dist_sq_to_slime<=(self.attack_reach+slime.radius)**2:
                     dx_s=utils.get_wrapped_delta(player_wx,slime.world_x,config.MAP_WIDTH); dy_s=utils.get_wrapped_delta(player_wy,slime.world_y,config.MAP_HEIGHT)
@@ -74,9 +90,11 @@ class WhipWeapon(Weapon):
                             slime.world_y=(slime.world_y+norm_kb_dy*self.knockback_strength)%config.MAP_HEIGHT
                             slime.rect.center=(int(slime.world_x),int(slime.world_y))
 
+            # 적 발사체와의 충돌 (이것도 주변 발사체로 최적화 가능하지만, 일단 놔둡니다)
             slime_bullets_list_ref = game_entities_lists.get('slime_bullets')
             if slime_bullets_list_ref and self.is_attacking:
                 for sb in slime_bullets_list_ref:
+                    # ... (발사체 충돌 로직은 렉이 덜하므로 그대로 유지) ...
                     if sb.is_hit_by_player_attack: continue
                     dist_sq_to_bullet = utils.distance_sq_wrapped(player_wx, player_wy, sb.world_x, sb.world_y, config.MAP_WIDTH, config.MAP_HEIGHT)
                     if dist_sq_to_bullet <= (self.attack_reach + sb.size)**2:
