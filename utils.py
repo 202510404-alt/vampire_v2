@@ -1,129 +1,107 @@
-# utils.py (Access Key와 Async/Await 적용 버전)
 import math
 import json
+import asyncio
 import config
-import urllib.request
-import urllib.parse
-import asyncio  # Pygbag 비동기 환경을 위해 필요
-import pygame
 
-# 랭킹 항목 정의 (동일)
-RANK_CATEGORIES = [
-  "Levels", "Kills", "Bosses", "DifficultyScore", "SurvivalTime"
-]
+# 1. 환경 감지 및 통신 모듈 설정
+IS_WEB = False
+try:
+    from pyodide.http import pyfetch # type: ignore
+    IS_WEB = True
+except ImportError:
+    import urllib.request
+    IS_WEB = False
 
 # ----------------------------------------------------
-# 비동기 통신 래퍼 함수 (웹 호환의 핵심)
+# 2. Supabase 통신 함수 (400 에러 상세 디버깅 포함)
 # ----------------------------------------------------
-async def _fetch_data_async(url, headers, method, data=None):
-    # 이 코드가 urlopen을 asyncio에 통합하여 웹에서 비동기로 실행되게 함
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+async def _fetch_supabase(endpoint_with_query, method, data=None):
+    url = f"{config.SUPABASE_URL}/rest/v1/{endpoint_with_query}"
     
-    try:
-        loop = asyncio.get_event_loop()
-        # run_in_executor를 사용하여 동기 함수를 비동기로 실행
-        response = await loop.run_in_executor(None, urllib.request.urlopen, req)
-        print(f"SUCCESS: {method} to {url} returned {response.getcode()}") 
-        
-        return response.read().decode('utf-8')
-    except Exception as e:
-        # 401 Unauthorized 에러 등의 상세 정보를 출력해 디버깅 돕기
-        if hasattr(e, 'read'):
-            error_body = e.read().decode('utf-8')
-            # 🟢 추가: 실패 시 상세 정보 출력
-            print(f"FAILED: {method} to {url} returned {e.code}. BODY: {error_body}")
-            raise e
-        else:
-            print(f"ASYNC FETCH ERROR: {e}")
-        raise e
-
-# ----------------------------------------------------
-# 랭킹 저장/로드 함수 (Access Key 사용)
-# ----------------------------------------------------
-
-async def load_rankings_jsonbin():
-    """JSONbin에서 전체 랭킹 데이터를 GET 요청으로 수신합니다."""
-    
+    # Supabase 필수 헤더
     headers = {
-        # 🚩 config.JSONBIN_API_KEY에 발급받은 Access Key를 사용하도록 가정
-        'X-Access-Key': config.JSONBIN_API_KEY, 
-        'Accept': 'application/json'
+        "apikey": config.SUPABASE_KEY,
+        "Authorization": f"Bearer {config.SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
     }
-    
-    try:
-        data_str = await _fetch_data_async(config.JSONBIN_BIN_URL + "/latest", headers, 'GET')
-        return json.loads(data_str).get('record', {}).get('rankings', [])
-    except Exception:
-        return []
 
-async def save_new_ranking_jsonbin(name, score_data):
-    """새 기록을 JSONbin에 PUT 요청으로 덮어씁니다. (Access Key 사용)"""
-    
-    # 1. 기존 데이터 로드 (비동기 함수 호출)
-    current_data = await load_rankings_jsonbin()
-    
-    # 2. 새 기록 생성 (이전 로직과 동일)
-    new_record = {
-        "RankCategory": "", 
-        "RankValue": 0.0,
-        "ID": name,
-        "Levels": float(score_data.get('levels', 0.0)),
-        "Kills": float(score_data.get('kills', 0.0)),
-        "Bosses": float(score_data.get('bosses', 0.0)),
-        "DifficultyScore": float(score_data.get('difficulty_score', 0.0)),
-        "SurvivalTime": float(score_data.get('survival_time', 0.0))
-    }
-    
-    # 3. 항목별 랭킹 진입 확인 및 추가 로직 (이전 로직과 동일)
-    records_to_add = []
-    
-    for category_key in RANK_CATEGORIES:
-        category_score = new_record[category_key]
-        
-        filtered_rankings = [r for r in current_data if r.get('RankCategory') == category_key]
-        filtered_rankings.sort(key=lambda x: x.get('RankValue', 0.0), reverse=True)
-        
-        if len(filtered_rankings) < 10 or category_score > filtered_rankings[9].get('RankValue', 0.0):
-            record_to_add = new_record.copy()
-            record_to_add['RankCategory'] = category_key
-            record_to_add['RankValue'] = category_score
-            records_to_add.append(record_to_add)
-
-    # 4. 랭킹에 든 기록이 있을 경우에만 서버에 PUT 요청
-    if records_to_add:
-        for record in records_to_add: current_data.append(record)
-        
-        final_rankings = []
-        for category_key in RANK_CATEGORIES:
-            category_list = [r for r in current_data if r.get('RankCategory') == category_key]
-            category_list.sort(key=lambda x: x.get('RankValue', 0.0), reverse=True)
-            final_rankings.extend(category_list[:10])
-            
-        # 5. JSONbin에 PUT 요청
-        data_to_save = {"rankings": final_rankings}
-        data_json = json.dumps(data_to_save).encode('utf-8')
-        
-        headers = {
-            'Content-Type': 'application/json',
-            'X-Access-Key': config.JSONBIN_API_KEY, # 🚩 Access Key 사용
-            'X-Bin-Versioning': 'false' 
-        }
-        
+    if IS_WEB:
         try:
-            await _fetch_data_async(config.JSONBIN_BIN_URL, headers, 'PUT', data=data_json)
-            return {"success": True, "message": "랭킹 저장 완료"}
+            await asyncio.sleep(0.01) # 멈춤 방지
+            body_json = json.dumps(data) if data else None
+            response = await pyfetch(url, method=method, headers=headers, body=body_json)
+            if response.status in [200, 201]:
+                return await response.string()
+            return None
+        except: return None
+    else:
+        try:
+            # 로컬(VSC)용 urllib 방식
+            req_data = json.dumps(data).encode('utf-8') if data else None
+            req = urllib.request.Request(url, data=req_data, headers=headers, method=method)
+            with urllib.request.urlopen(req) as res:
+                return res.read().decode('utf-8')
+        except urllib.error.HTTPError as e:
+            # 🚩 400 에러 원인을 더 자세히 찍어줍니다 (컬럼명 오타 확인용)
+            err_body = e.read().decode('utf-8')
+            print(f"LOCAL DB ERROR: {e.code} {err_body}")
+            return None
         except Exception as e:
-            return {"success": False, "message": f"저장 오류: {e}"}
+            print(f"LOCAL DB ERROR: {e}")
+            return None
 
-    return {"success": True, "message": "10위권 밖 기록, 저장 안 함"}
+# ----------------------------------------------------
+# 3. 랭킹 로드 (UI 데이터 포맷 변환)
+# ----------------------------------------------------
+async def load_rankings_online():
+    # 전체 데이터를 가져와서 UI 형식에 맞게 변환
+    data_str = await _fetch_supabase("rankings?select=*", 'GET')
+    
+    formatted_list = []
+    if data_str:
+        try:
+            raw_list = json.loads(data_str)
+            for row in raw_list:
+                # 메인 UI가 인식하는 카테고리별로 데이터 뻥튀기
+                for cat in ["Levels", "Kills", "Bosses", "DifficultyScore", "SurvivalTime"]:
+                    # DB 컬럼명과 UI 키 연결
+                    db_col = cat.lower().replace("score", "_score").replace("time", "_time")
+                    formatted_list.append({
+                        "ID": row.get("name", "익명"),
+                        "RankCategory": cat,
+                        "RankValue": float(row.get(db_col, 0)),
+                        "Levels": row.get("levels", 0),
+                        "Kills": row.get("kills", 0)
+                    })
+        except Exception as e:
+            print(f"파싱 에러: {e}")
+    return formatted_list
 
+# ----------------------------------------------------
+# 4. 랭킹 저장
+# ----------------------------------------------------
+async def save_new_ranking_online(name, score_data):
+    new_row = {
+        "name": str(name),
+        "levels": int(score_data.get('levels', 0)),
+        "kills": int(score_data.get('kills', 0)),
+        "bosses": int(score_data.get('bosses', 0)),
+        "difficulty_score": float(score_data.get('difficulty_score', 0.0)),
+        "survival_time": float(score_data.get('survival_time', 0.0))
+    }
+    
+    res = await _fetch_supabase("rankings", 'POST', data=new_row)
+    if res:
+        print("Supabase DB에 저장 성공!")
+        return True
+    return False
 
-# 🚩 main.py에서 비동기 함수로 직접 호출할 수 있도록 함수 이름 변경
-load_rankings_online = load_rankings_jsonbin 
-save_new_ranking_online = save_new_ranking_jsonbin
-
-# ... (기존 utils 함수는 그대로 유지)
+# ----------------------------------------------------
+# 5. 🚩 거리 계산 유틸리티 (이게 빠져서 튕겼던 거임!!)
+# ----------------------------------------------------
 def get_wrapped_delta(val1, val2, map_dim):
+    """무한 루프 맵에서 두 좌표 사이의 최단 거리를 계산합니다."""
     delta = val2 - val1
     if abs(delta) > map_dim / 2:
         if delta > 0: delta -= map_dim
@@ -131,6 +109,7 @@ def get_wrapped_delta(val1, val2, map_dim):
     return delta
 
 def distance_sq_wrapped(x1, y1, x2, y2, map_w, map_h):
+    """무한 루프 맵에서 두 좌표 사이의 거리의 제곱을 계산합니다."""
     dx = get_wrapped_delta(x1, x2, map_w)
     dy = get_wrapped_delta(y1, y2, map_h)
     return dx*dx + dy*dy

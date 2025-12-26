@@ -47,35 +47,35 @@ def spawn_enemy(state):
 
 def handle_boss_logic(state):
     """보스 등장 및 사망 처리를 담당합니다."""
-    # 보스 스폰 체크
-    if not state.boss_active and state.player.total_enemies_killed > 0:
-        # 설정된 킬 수마다 보스 소환 (예: 150, 300, 450...)
-        if state.player.total_enemies_killed % config.BOSS_SLIME_SPAWN_KILL_THRESHOLD == 0 and not state.boss_slimes:
-            state.boss_active = True
-            
-            # 플레이어 근처에 소환
-            bx = (state.player.world_x + 300) % config.MAP_WIDTH
-            by = (state.player.world_y + 300) % config.MAP_HEIGHT
-            
-            # 🚩 [리메이크 핵심] BossSlime 생성 시 현재까지 잡은 보스 수(boss_index)를 인자로 넘김!
-            # 1번째 보스 소환 시: total_bosses_killed = 0
-            # 2번째 보스 소환 시: total_bosses_killed = 1
-            # 3번째 보스 소환 시: total_bosses_killed = 2 (이때부터 각성 보스 등장)
-            state.boss_slimes.append(BossSlime(bx, by, state.current_slime_max_hp, state.player.total_bosses_killed))
-            print(f"보스 등장! (누적 {state.player.total_bosses_killed + 1}회차)")
+    
+    # 🚩 [수정 포인트] 보스 스폰 체크 로직 강화
+    # 킬 수가 150킬 단위를 넘어섰는지 계산합니다.
+    # 예: 151킬 // 150 = 1. 지금까지 잡은 보스가 0마리라면? 1 > 0 이니까 소환!
+    if not state.boss_active:
+        num_bosses_should_have_spawned = state.player.total_enemies_killed // config.BOSS_SLIME_SPAWN_KILL_THRESHOLD
+        
+        if num_bosses_should_have_spawned > state.player.total_bosses_killed:
+            if not state.boss_slimes: # 현재 화면에 보스가 없을 때만 실행
+                state.boss_active = True
+                
+                # 플레이어 근처 소환 위치 계산
+                bx = (state.player.world_x + 300) % config.MAP_WIDTH
+                by = (state.player.world_y + 300) % config.MAP_HEIGHT
+                
+                # BossSlime(x, y, 현재체력기준값, 몇번째보스인지)
+                state.boss_slimes.append(BossSlime(bx, by, state.current_slime_max_hp, state.player.total_bosses_killed))
+                print(f"DEBUG: 보스{state.player.total_bosses_killed + 1} 소환 완료! (현재 {state.player.total_enemies_killed}킬)")
 
     # 보스 업데이트 및 사망 처리
-    # 보스의 update 함수 내부에서 페이즈 전환, 거대 탄환, 슈터 소환 패턴이 돌아갑니다.
     bosses_to_remove = [b for b in state.boss_slimes if not b.update(state.player.world_x, state.player.world_y, state.get_entities_dict())]
     
     for boss in bosses_to_remove:
-        state.boss_active = False
-        state.player.total_bosses_killed += 1 # 처치 수 증가
-        state.player.trigger_boss_reward_selection() # 보상 창 띄우기
+        state.boss_active = False # 보스 죽으면 다시 일반몹 스폰되게끔 해제
+        state.player.total_bosses_killed += 1
+        state.player.trigger_boss_reward_selection()
         
-        # 보상으로 대량의 경험치 구슬 생성
+        # 보상 구슬 생성
         for _ in range(20):
             state.exp_orbs.append(ExpOrb(boss.world_x + random.randint(-50,50), boss.world_y + random.randint(-50,50)))
             
-    # 사망한 보스 리스트에서 제거
     state.boss_slimes[:] = [b for b in state.boss_slimes if b not in bosses_to_remove]

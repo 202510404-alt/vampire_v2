@@ -25,28 +25,22 @@ def draw_game_ui(surface, player_obj, game_entities, current_slime_max_hp_val, b
     # 4. 경험치 바
     exp_x, exp_y, exp_w, exp_h = hp_x, hp_y + hp_h + 35, 150, 15
     exp_ratio = player_obj.exp / player_obj.exp_to_level_up if player_obj.exp_to_level_up > 0 else 0
-    pygame.draw.rect(surface, config.DARK_RED, (exp_x, exp_y, exp_w, exp_h), border_radius=3)
+    pygame.draw.rect(surface, config.DARK_RED, (exp_x, exp_y, exp_w, hp_h-5), border_radius=3)
     if exp_ratio > 0:
         pygame.draw.rect(surface, config.EXP_BAR_COLOR, (exp_x, exp_y, int(exp_w * exp_ratio), exp_h), border_radius=3)
     exp_text = small_font.render(f"EXP: {player_obj.exp}/{player_obj.exp_to_level_up}", True, config.WHITE)
     surface.blit(exp_text, exp_text.get_rect(center=(exp_x + exp_w//2, exp_y + exp_h//2)))
 
-    # 5. 🚩 태풍 스킬 쿨타임 표시 (복구 완료)
+    # 5. 태풍 스킬 쿨타임 표시
     if player_obj.special_skill:
         s = player_obj.special_skill
-        # 화면 우측 하단 넉넉한 위치
         skill_x, skill_y, skill_w, skill_h = config.SCREEN_WIDTH - 160, config.SCREEN_HEIGHT - 40, 150, 20
         cooldown_ratio = s.cooldown_timer / s.cooldown
-        
-        # 쿨타임 바 배경
         pygame.draw.rect(surface, (50, 50, 50), (skill_x, skill_y, skill_w, skill_h), border_radius=3)
-        # 쿨타임 게이지 (차오르는 느낌)
         color = config.STORM_COLOR[:3] if cooldown_ratio >= 1.0 else (100, 100, 100)
         pygame.draw.rect(surface, color, (skill_x, skill_y, int(skill_w * min(1.0, cooldown_ratio)), skill_h), border_radius=3)
-        
         txt = "태풍 READY (Z)" if cooldown_ratio >= 1.0 else f"태풍 로딩... {int(cooldown_ratio*100)}%"
-        skill_text = small_font.render(txt, True, config.WHITE)
-        surface.blit(skill_text, (skill_x, skill_y - 25))
+        surface.blit(small_font.render(txt, True, config.WHITE), (skill_x, skill_y - 25))
 
     # 6. 난이도 및 보스 처치 수
     info_y = config.SCREEN_HEIGHT - 90
@@ -64,5 +58,28 @@ def draw_game_ui(surface, player_obj, game_entities, current_slime_max_hp_val, b
         pygame.draw.rect(surface, (255, 140, 0), (bg_x, bg_y, int(bg_w * bg_ratio), bg_h), border_radius=5)
     surface.blit(medium_font.render(f"다음 보스: {progress}/{boss_spawn_threshold_val}", True, config.WHITE), (bg_x + 100, bg_y))
 
-    # 8. 오버레이 (생략 방지용 이름 유지)
-    # 실제 그리기는 ui.screens의 draw_upgrade_overlay 호출
+    # 🚩 8. 업그레이드 오버레이 (버그 수정 핵심!)
+    # 우선순위: 보스 보상 창이 레벨업 창보다 먼저 보이게 합니다.
+    if getattr(player_obj, 'is_selecting_boss_reward', False):
+        draw_upgrade_overlay(surface, player_obj.boss_reward_options_to_display, "★ 보스 보상 선택 ★")
+    elif player_obj.is_selecting_upgrade:
+        draw_upgrade_overlay(surface, player_obj.upgrade_options_to_display, "LEVEL UP!")
+
+def draw_upgrade_overlay(surface, options, title_text):
+    """업그레이드/보상 선택창을 실제로 그리는 함수 (이게 누락되면 멈춤!)"""
+    overlay = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 200))
+    surface.blit(overlay, (0, 0))
+    
+    title_s = large_font.render(title_text, True, config.YELLOW)
+    surface.blit(title_s, title_s.get_rect(center=(config.SCREEN_WIDTH//2, config.SCREEN_HEIGHT//4)))
+    
+    box_w, box_h, spacing = 600, 60, 20
+    start_y = config.SCREEN_HEIGHT//2 - 50
+    for i, opt in enumerate(options):
+        rect = pygame.Rect((config.SCREEN_WIDTH - box_w)//2, start_y + i*(box_h + spacing), box_w, box_h)
+        pygame.draw.rect(surface, config.UI_OPTION_BOX_BG_COLOR, rect, border_radius=15)
+        pygame.draw.rect(surface, config.UI_OPTION_BOX_BORDER_COLOR, rect, 3, border_radius=15)
+        
+        txt = medium_font.render(f"[{i+1}] {opt.get('text', '옵션 없음')}", True, config.WHITE)
+        surface.blit(txt, txt.get_rect(center=rect.center))
